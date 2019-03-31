@@ -2,11 +2,13 @@ const path = require('path');
 const HtmlPlugin = require('html-webpack-plugin');
 const webpack = require('webpack');
 const ExtractPlugin = require('extract-text-webpack-plugin');
-const isdev = process.env.NODE_ENV === 'development';
-function resolve (dir) {
-    return path.join(__dirname, '..', dir)
-}
+const VueLoaderPlugin = require('vue-loader/lib/plugin');
+const isDev = process.env.NODE_ENV === 'development';
+
+
 const config = {
+    //webpack4需要的mode属性,development||production
+    mode: process.env.NODE_ENV || "production",
     target: 'web',
     entry: path.join(__dirname, '../src/main.js'),
     output: {
@@ -16,27 +18,36 @@ const config = {
     module: {
         rules: [
             {
-                test: /\.css$/,
-                use: ['style-loader', 'vue-style-loader', 'css-loader']
+                test: /\.vue$/,
+                loader: 'vue-loader'
             },
             {
-                test: /\.vue$/,
-                loader: ['vue-loader']
+                test: /\.css$/,
+                use: ['style-loader', 'vue-style-loader', 'css-loader', 'postcss-loader']
             },
             {
                 test: /\.less$/,
                 use: [
-                    'vue-style-loader',
                     {
-                        loader: 'css-loader'
+                        loader: "vue-style-loader"
                     },
+                    {
+                        loader: "css-loader"
+                    },
+                    //postcss插件要放在css与less之间
                     {
                         loader: 'postcss-loader',
                         options: {
                             sourceMap: true
                         }
                     },
-                    'less-loader'
+                    {
+                        loader: "less-loader",
+                        options: {
+                            sourceMap: true
+                        }
+                    },
+
                 ]
             },
             {
@@ -49,34 +60,49 @@ const config = {
                     }
                 }]
             },
+            {
+                //连接.babelrc文件来进行es6转换
+                test: /\.js$/,
+                use: [
+                    {
+                        loader: 'babel-loader'
+                    }
+                ],
+                exclude: [
+                    path.resolve(__dirname, '../node_modules')
+                ]
+            },
+            {
+                test: /\.(js|vue)$/,
+                //eslint代码规范
+                loader: 'eslint-loader',
+                enforce: "pre",
+                exclude: [
+                    // 隔离node_modules
+                    path.resolve(__dirname, '../node_modules')
+                ],
+                options: {
+                    //自动修复
+                    fix: true
+                }
+            }
         ]
-    },
-    resolve: {
-        extensions: ['.js', '.vue', '.json'],
-        alias: {
-            'vue$': 'vue/dist/vue.esm.js',
-            '@': resolve('src'),
-            'jquery': 'jquery' //这里是增加的
-        }
     },
     plugins: [
         new webpack.DefinePlugin({
             'process.env': {
-                NODE_ENV: isdev ? '"development"' : '"production"'
+                NODE_ENV: isDev ? '"development"' : '"production"'
             }
         }),
         new HtmlPlugin({
             template: 'index.html'
         }),
-        new webpack.ProvidePlugin({
-            jQuery: "jquery",
-            $: "jquery"
-        })
+        //vue-loader15版本起，需要引入这个插件
+        new VueLoaderPlugin()
     ]
 };
 
-if (isdev) {
-    config.devtool = '#cheap-module-eval-source-map';
+if (isDev) {
     config.devServer = {
         port: '8080',
         host: '0.0.0.0',
@@ -88,23 +114,25 @@ if (isdev) {
         // contentBase: './dist'
     };
     config.plugins.push(
-        new webpack.HotModuleReplacementPlugin(),
-        new webpack.NoEmitOnErrorsPlugin(),
+        new webpack.HotModuleReplacementPlugin()
     )
 } else {
     config.entry = {
         app: path.join(__dirname, '../src/main.js'),
         vendor: ['vue']
     };
-    config.output.filename = '[name].js';//hash作用到了vendor.js上，chunkhash相当于用了另一个节点
+    //hash作用到了vendor.js上，chunkhash相当于用了另一个节点
+    config.output.filename = '[name].js';
+    //等同于webpack.optimize.CommonsChunkPlugin
+    config.optimization = {
+        splitChunks: {
+            chunks: 'all'
+        },
+        //非指定命名文件
+        runtimeChunk: true
+    };
     config.plugins.push(
-        new ExtractPlugin('styles.[contentHash:8].css'),
-        new webpack.optimize.CommonsChunkPlugin({
-            name: 'vendor'
-        }),
-        new webpack.optimize.CommonsChunkPlugin({
-            name: 'runtime'
-        })//生成的webapck文件单独打包出去，新模块加入时给一个id，
+        new ExtractPlugin('styles.[contentHash:8].css')
     )
 
 }
